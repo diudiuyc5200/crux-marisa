@@ -338,22 +338,29 @@ void sde_encoder_control_idle_pc(struct drm_encoder *enc, bool enable);
 
 /**
  * sde_encoder_in_cont_splash - checks if display is in continuous splash
- * @drm_enc:    Pointer to drm encoder structure
+ * @encoder:    Pointer to drm encoder structure
  * @Return:     true if display in continuous splash
  */
-int sde_encoder_in_cont_splash(struct drm_encoder *enc);
+int sde_encoder_in_cont_splash(struct drm_encoder *encoder);
 
 /**
  * sde_encoder_get_ctlstart_timeout_state - checks if ctl start timeout happened
- * @drm_enc:    Pointer to drm encoder structure
+ * @encoder:    Pointer to drm encoder structure
  * @Return:     non zero value if ctl start timeout occurred
  */
-int sde_encoder_get_ctlstart_timeout_state(struct drm_encoder *enc);
+int sde_encoder_get_ctlstart_timeout_state(struct drm_encoder *encoder);
 
 /**
  * sde_encoder_vid_wait_for_active - wait Vactive region for some mark region
- * @drm_enc:    Pointer to drm encoder structure
+ * @encoder:    Pointer to drm encoder structure
  * @Return:     non zero value if wait timeout occurred
  */
-int sde_encoder_vid_wait_for_active(struct drm_encoder *enc);
+int sde_encoder_vid_wait_for_active(struct drm_encoder *encoder);
+
+/**
+ * sde_encoder_trigger_early_wakeup - trigger early wake up
+ * @encoder:    Pointer to drm encoder structure
+ */
+void sde_encoder_trigger_early_wakeup(struct drm_encoder *encoder);
+
 #endif /* __SDE_ENCODER_H__ */
