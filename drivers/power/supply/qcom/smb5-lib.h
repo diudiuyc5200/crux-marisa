@@ -187,9 +187,9 @@ enum print_reason {
 #define ICL_LIMIT_LEVEL_THR		8
 
 /* defined for qc2_unsupported */
-#define QC2_UNSUPPORTED_UA		1800000
+#define QC2_UNSUPPORTED_UA		2500000
 /* defined for HVDCP2 */
-#define HVDCP2_CURRENT_UA		1500000
+#define HVDCP2_CURRENT_UA		2500000
 
 /* defined for charger type recheck */
 #define CHARGER_RECHECK_DELAY_MS	30000
@@ -265,7 +265,7 @@ enum print_reason {
 
 /* used for bq charge pump solution */
 #define MAIN_CHARGER_ICL	2000000
-#define QC3_CHARGER_ICL		500000
+#define QC3_CHARGER_ICL		2000000
 #define QC3P5_CHARGER_ICL	2000000
 
 #define MAIN_CHARGER_STOP_ICL	50000
