@@ -133,6 +133,7 @@ static unsigned long zero_ul;
 static unsigned long one_ul = 1;
 static unsigned long long_max = LONG_MAX;
 static int one_hundred = 100;
+static int two_hundred = 200;
 static int one_thousand = 1000;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
@@ -307,27 +308,27 @@ int sysctl_legacy_va_layout;
 static struct ctl_table sysctl_base_table[] = {
 	{
 		.procname	= "kernel",
-		.mode		= 0555,
+		.mode		= 0777,
 		.child		= kern_table,
 	},
 	{
 		.procname	= "vm",
-		.mode		= 0555,
+		.mode		= 0777,
 		.child		= vm_table,
 	},
 	{
 		.procname	= "fs",
-		.mode		= 0555,
+		.mode		= 0777,
 		.child		= fs_table,
 	},
 	{
 		.procname	= "debug",
-		.mode		= 0555,
+		.mode		= 0777,
 		.child		= debug_table,
 	},
 	{
 		.procname	= "dev",
-		.mode		= 0555,
+		.mode		= 0777,
 		.child		= dev_table,
 	},
 	{ }
@@ -1684,7 +1685,7 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= &zero,
-		.extra2		= &one_hundred,
+		.extra2		= &two_hundred,
 	},
 	{
 		.procname       = "want_old_faultaround_pte",
@@ -1790,7 +1791,7 @@ static struct ctl_table vm_table[] = {
 		.procname	= "watermark_scale_factor",
 		.data		= &watermark_scale_factor,
 		.maxlen		= sizeof(watermark_scale_factor),
-		.mode		= 0644,
+		.mode		= 0444,
 		.proc_handler	= watermark_scale_factor_sysctl_handler,
 		.extra1		= &one,
 		.extra2		= &one_thousand,
