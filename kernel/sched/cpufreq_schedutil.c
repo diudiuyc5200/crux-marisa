@@ -318,7 +318,7 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	 * Use the frequency step below if the calculated frequency is <20%
 	 * higher than it.
 	 */
-	if (mult_frac(100, freq - h_freq, l_freq - h_freq) < 20)
+	if (mult_frac(100, freq - h_freq, l_freq - h_freq) < 15)
 		return h_freq;
 
 	return l_freq;
