@@ -2,6 +2,9 @@
 #include <linux/fs.h>
 #include <linux/kobject.h>
 #include <linux/module.h>
+#include <generated/utsrelease.h>
+#include <generated/compile.h>
+#include <linux/version.h> /* LINUX_VERSION_CODE, KERNEL_VERSION macros */
 #include <linux/workqueue.h>
 
 #include "allowlist.h"
@@ -10,26 +13,6 @@
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
 #include "throne_tracker.h"
-
-#ifdef CONFIG_KSU_CMDLINE
-#include <linux/init.h>
-
-unsigned int enable_kernelsu = 1; // enabled by default
-
-static int __init read_kernelsu_state(char *s)
-{
-	if (s)
-		enable_kernelsu = simple_strtoul(s, NULL, 0);
-	return 1;
-}
-__setup("kernelsu.enabled=", read_kernelsu_state);
-
-unsigned int get_ksu_state(void)
-{
-	return enable_kernelsu;
-}
-
-#endif
 
 static struct workqueue_struct *ksu_workqueue;
 
@@ -52,19 +35,17 @@ int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 					    flags);
 }
 
-extern void ksu_sucompat_init();
-extern void ksu_sucompat_exit();
-extern void ksu_ksud_init();
-extern void ksu_ksud_exit();
+extern void ksu_sucompat_init(void);
+extern void ksu_sucompat_exit(void);
+extern void ksu_ksud_init(void);
+extern void ksu_ksud_exit(void);
 
 int __init kernelsu_init(void)
 {
-#ifdef CONFIG_KSU_CMDLINE
-	if (enable_kernelsu < 1) {
-		pr_info_once("drivers is disabled.");
-		return 0;
-	}
-#endif
+	/* Print quirks for easier debug */
+	pr_info("Initialized on: %s (%s) with kernelsu driver version: %u\n",
+		UTS_RELEASE, UTS_MACHINE, KSU_VERSION);
+
 #ifdef CONFIG_KSU_DEBUG
 	pr_alert("*************************************************************");
 	pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
@@ -83,11 +64,10 @@ int __init kernelsu_init(void)
 
 	ksu_throne_tracker_init();
 
-#ifdef KSU_HOOK_WITH_KPROBES
 	ksu_sucompat_init();
+
+#ifdef CONFIG_KSU_KPROBES_HOOK
 	ksu_ksud_init();
-#else
-	pr_debug("init ksu driver\n");
 #endif
 
 #ifdef MODULE
@@ -100,20 +80,16 @@ int __init kernelsu_init(void)
 
 void kernelsu_exit(void)
 {
-#ifdef CONFIG_KSU_CMDLINE
-	if (enable_kernelsu < 1)
-		return;
-#endif
 	ksu_allowlist_exit();
 
 	ksu_throne_tracker_exit();
 
 	destroy_workqueue(ksu_workqueue);
 
-#ifdef KSU_HOOK_WITH_KPROBES
+#ifdef CONFIG_KSU_KPROBES_HOOK
 	ksu_ksud_exit();
-	ksu_sucompat_exit();
 #endif
+	ksu_sucompat_exit();
 
 	ksu_core_exit();
 }
@@ -125,7 +101,10 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("weishu");
 MODULE_DESCRIPTION("Android KernelSU");
 
-#include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#else
 MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
 #endif

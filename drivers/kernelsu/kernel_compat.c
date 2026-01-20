@@ -61,7 +61,7 @@ static bool android_context_saved_checked = false;
 static bool android_context_saved_enabled = false;
 static struct ksu_ns_fs_saved android_context_saved;
 
-void ksu_android_ns_fs_check()
+void ksu_android_ns_fs_check(void)
 {
 	if (android_context_saved_checked)
 		return;
@@ -112,7 +112,7 @@ struct file *ksu_filp_open_compat(const char *filename, int flags, umode_t mode)
 ssize_t ksu_kernel_read_compat(struct file *p, void *buf, size_t count,
 			       loff_t *pos)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0) || defined(KSU_OPTIONAL_KERNEL_READ)
 	return kernel_read(p, buf, count, pos);
 #else
 	loff_t offset = pos ? *pos : 0;
@@ -127,7 +127,7 @@ ssize_t ksu_kernel_read_compat(struct file *p, void *buf, size_t count,
 ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count,
 				loff_t *pos)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0) || defined(KSU_OPTIONAL_KERNEL_WRITE)
 	return kernel_write(p, buf, count, pos);
 #else
 	loff_t offset = pos ? *pos : 0;
@@ -139,7 +139,7 @@ ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count,
 #endif
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0) || defined(KSU_OPTIONAL_STRNCPY)
 long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
 				   long count)
 {
@@ -178,3 +178,33 @@ long ksu_strncpy_from_user_nofault(char *dst, const void __user *unsafe_addr,
 	return ret;
 }
 #endif
+
+long ksu_strncpy_from_user_retry(char *dst, const void __user *unsafe_addr,
+				   long count)
+{
+	long ret;
+
+	ret = ksu_strncpy_from_user_nofault(dst, unsafe_addr, count);
+	if (likely(ret >= 0))
+		return ret;
+
+	// we faulted! fallback to slow path
+	if (unlikely(!ksu_access_ok(unsafe_addr, count))) {
+#ifdef CONFIG_KSU_DEBUG
+		pr_err("%s: faulted!\n", __func__);
+#endif
+		return -EFAULT;
+	}
+
+	// why we don't do like how strncpy_from_user_nofault?
+	ret = strncpy_from_user(dst, unsafe_addr, count);
+
+	if (ret >= count) {
+		ret = count;
+		dst[ret - 1] = '\0';
+	} else if (likely(ret >= 0)) {
+		ret++;
+	}
+
+	return ret;
+}

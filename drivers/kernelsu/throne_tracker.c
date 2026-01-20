@@ -5,6 +5,9 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/version.h>
+#include <linux/stat.h>
+#include <linux/namei.h>
+#include <asm/atomic.h>
 
 #include "allowlist.h"
 #include "klog.h" // IWYU pragma: keep
@@ -15,7 +18,30 @@
 
 uid_t ksu_manager_uid = KSU_INVALID_UID;
 
+static atomic_t scan_lock = ATOMIC_INIT(0);
+static atomic_t pkg_lock = ATOMIC_INIT(0);
+
+static bool is_pkg_lock(void) {
+	return atomic_read(&pkg_lock) == 1;
+}
+static bool is_scan_lock(void) {
+	return atomic_read(&scan_lock) == 1;
+}
+static void set_pkg_lock(void) {
+	atomic_set(&pkg_lock, 1);
+}
+static void set_scan_lock(void) {
+	atomic_set(&scan_lock, 1);
+}
+
 #define SYSTEM_PACKAGES_LIST_PATH "/data/system/packages.list.tmp"
+#define USER_DATA_PATH "/data/user_de/0"
+#define USER_DATA_PATH_LEN 288
+
+struct user_data_context {
+	struct dir_context ctx;
+	struct list_head *uid_list;
+};
 
 struct uid_data {
 	struct list_head list;
@@ -106,7 +132,7 @@ struct apk_path_hash {
 	struct list_head list;
 };
 
-static struct list_head apk_path_hash_list = LIST_HEAD_INIT(apk_path_hash_list);
+static struct list_head apk_path_hash_list;
 
 struct my_dir_context {
 	struct dir_context ctx;
@@ -117,10 +143,7 @@ struct my_dir_context {
 	int *stop;
 };
 // https://docs.kernel.org/filesystems/porting.html
-// filldir_t (readdir callbacks) calling conventions have changed.
-// Instead of returning 0 or -E... it returns bool now.
-// false means "no more" (as -E... used to) and true - "keep going" (as 0 in old calling conventions).
-// Rationale: callers never looked at specific -E... values anyway. -> iterate_shared() instances require no changes at all, all filldir_t ones in the tree converted.
+// filldir_t (readdir callbacks) calling conventions have changed. Instead of returning 0 or -E... it returns bool now. false means "no more" (as -E... used to) and true - "keep going" (as 0 in old calling conventions). Rationale: callers never looked at specific -E... values anyway. -> iterate_shared() instances require no changes at all, all filldir_t ones in the tree converted.
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 #define FILLDIR_RETURN_TYPE bool
 #define FILLDIR_ACTOR_CONTINUE true
@@ -130,6 +153,112 @@ struct my_dir_context {
 #define FILLDIR_ACTOR_CONTINUE 0
 #define FILLDIR_ACTOR_STOP -EINVAL
 #endif
+
+FILLDIR_RETURN_TYPE user_data_actor(struct dir_context *ctx, const char *name,
+				     int namelen, loff_t off, u64 ino,
+				     unsigned int d_type)
+{
+	struct user_data_context *my_ctx =
+		container_of(ctx, struct user_data_context, ctx);
+
+	if (!my_ctx || !my_ctx->uid_list)
+		return FILLDIR_ACTOR_STOP;
+
+	if (!strncmp(name, "..", namelen) || !strncmp(name, ".", namelen))
+		return FILLDIR_ACTOR_CONTINUE;
+
+	if (d_type != DT_DIR)
+		return FILLDIR_ACTOR_CONTINUE;
+
+	if (namelen >= KSU_MAX_PACKAGE_NAME) {
+		pr_warn("Package name too long: %.*s\n", namelen, name);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	char package_path[USER_DATA_PATH_LEN];
+	if (snprintf(package_path, sizeof(package_path), "%s/%.*s",
+		     USER_DATA_PATH, namelen, name) >= sizeof(package_path)) {
+		pr_err("Path too long for package: %.*s\n", namelen, name);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	struct path path;
+	int err = kern_path(package_path, LOOKUP_FOLLOW, &path);
+	if (err) {
+		pr_debug("Package path lookup failed: %s (err: %d)\n", package_path, err);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	struct kstat stat;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0) || defined(KSU_HAS_NEW_VFS_GETATTR)
+	err = vfs_getattr(&path, &stat, STATX_UID, AT_STATX_SYNC_AS_STAT);
+#else
+	err = vfs_getattr(&path, &stat);
+#endif
+	path_put(&path);
+
+	if (err) {
+		pr_debug("Failed to get attributes for: %s (err: %d)\n", package_path, err);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	uid_t uid = from_kuid(&init_user_ns, stat.uid);
+	if (uid == (uid_t)-1) {
+		pr_warn("Invalid UID for package: %.*s\n", namelen, name);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	struct uid_data *data = kzalloc(sizeof(struct uid_data), GFP_ATOMIC);
+	if (!data) {
+		pr_err("Failed to allocate memory for package: %.*s\n", namelen, name);
+		return FILLDIR_ACTOR_CONTINUE;
+	}
+
+	data->uid = uid;
+	size_t copy_len = min(namelen, KSU_MAX_PACKAGE_NAME - 1);
+	strncpy(data->package, name, copy_len);
+	data->package[copy_len] = '\0';
+
+	list_add_tail(&data->list, my_ctx->uid_list);
+
+	return FILLDIR_ACTOR_CONTINUE;
+}
+
+static int scan_user_data_for_uids(struct list_head *uid_list)
+{
+	struct file *dir_file;
+
+	if (!uid_list) {
+		return -EINVAL;
+	}
+
+	dir_file = ksu_filp_open_compat(USER_DATA_PATH, O_RDONLY, 0);
+	if (IS_ERR(dir_file)) {
+		pr_err("Failed to open %s, err: %ld\n", USER_DATA_PATH, PTR_ERR(dir_file));
+		return PTR_ERR(dir_file);
+	}
+
+	struct user_data_context ctx = {
+		.ctx.actor = user_data_actor,
+		.uid_list = uid_list,
+	};
+
+	iterate_dir(dir_file, &ctx.ctx);
+	filp_close(dir_file, NULL);
+
+	return 0;
+}
+
+static inline void print_iter(bool is_manager, char *dirpath)
+{
+#ifdef CONFIG_KSU_DEBUG
+	pr_info("Found new base.apk at path: %s, is_manager: %d\n",
+		dirpath, is_manager);
+#else
+	if (is_manager)
+		pr_info("Found KernelSU base.apk at %s\n", dirpath);
+#endif
+}
 
 FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 			     int namelen, loff_t off, u64 ino,
@@ -150,6 +279,12 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 
 	if (!strncmp(name, "..", namelen) || !strncmp(name, ".", namelen))
 		return FILLDIR_ACTOR_CONTINUE; // Skip "." and ".."
+
+	if (d_type == DT_DIR && namelen >= 8 && !strncmp(name, "vmdl", 4) &&
+	    !strncmp(name + namelen - 4, ".tmp", 4)) {
+		pr_info("Skipping directory: %.*s\n", namelen, name);
+		return FILLDIR_ACTOR_CONTINUE; // Skip staging package
+	}
 
 	if (snprintf(dirpath, DATA_PATH_LEN, "%s/%.*s", my_ctx->parent_dir,
 		     namelen, name) >= DATA_PATH_LEN) {
@@ -172,7 +307,7 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 		list_add_tail(&data->list, my_ctx->data_path_list);
 	} else {
 		if ((namelen == 8) && (strncmp(name, "base.apk", namelen) == 0)) {
-			struct apk_path_hash *pos, *n;
+			struct apk_path_hash *pos;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
 			unsigned int hash = full_name_hash(dirpath, strlen(dirpath));
 #else
@@ -186,27 +321,10 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 			}
 
 			bool is_manager = is_manager_apk(dirpath);
-#ifdef CONFIG_KSU_DEBUG
-			pr_info("Found new base.apk at path: %s, is_manager: %d\n,
-				dirpath, is_manager);
-#endif
+			print_iter(is_manager, dirpath);
 			if (is_manager) {
-#ifndef CONFIG_KSU_DEBUG
-				pr_info("Found new base.apk at path: %s\n", dirpath);
-#endif
 				crown_manager(dirpath, my_ctx->private_data);
 				*my_ctx->stop = 1;
-
-				// Manager found, clear APK cache list
-				list_for_each_entry_safe(pos, n, &apk_path_hash_list, list) {
-					list_del(&pos->list);
-					kfree(pos);
-				}
-			} else {
-				struct apk_path_hash *apk_data = kmalloc(sizeof(struct apk_path_hash), GFP_ATOMIC);
-				apk_data->hash = hash;
-				apk_data->exists = true;
-				list_add_tail(&apk_data->list, &apk_path_hash_list);
 			}
 		}
 	}
@@ -214,11 +332,13 @@ FILLDIR_RETURN_TYPE my_actor(struct dir_context *ctx, const char *name,
 	return FILLDIR_ACTOR_CONTINUE;
 }
 
-void search_manager(const char *path, int depth, struct list_head *uid_data)
+static void search_manager(const char *path, int depth, struct list_head *uid_data)
 {
 	int i, stop = 0;
 	struct list_head data_path_list;
 	INIT_LIST_HEAD(&data_path_list);
+	INIT_LIST_HEAD(&apk_path_hash_list);
+	unsigned long data_app_magic = 0;
 
 	// Initialize APK cache list
 	struct apk_path_hash *pos, *n;
@@ -232,7 +352,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 	data.depth = depth;
 	list_add_tail(&data.list, &data_path_list);
 
-	for (i = depth; i > 0; i--) {
+	for (i = depth; i >= 0; i--) {
 		struct data_path *pos, *n;
 
 		list_for_each_entry_safe(pos, n, &data_path_list, list) {
@@ -251,6 +371,24 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 					goto skip_iterate;
 				}
 
+				// grab magic on first folder, which is /data/app
+				if (!data_app_magic) {
+					if (file->f_inode->i_sb->s_magic) {
+						data_app_magic = file->f_inode->i_sb->s_magic;
+						pr_info("%s: dir: %s got magic! 0x%lx\n", __func__, pos->dirpath, data_app_magic);
+					} else {
+						filp_close(file, NULL);
+						goto skip_iterate;
+					}
+				}
+
+				if (file->f_inode->i_sb->s_magic != data_app_magic) {
+					pr_info("%s: skip: %s magic: 0x%lx expected: 0x%lx\n", __func__, pos->dirpath, 
+						file->f_inode->i_sb->s_magic, data_app_magic);
+					filp_close(file, NULL);
+					goto skip_iterate;
+				}
+
 				iterate_dir(file, &ctx.ctx);
 				filp_close(file, NULL);
 			}
@@ -261,12 +399,11 @@ skip_iterate:
 		}
 	}
 
-	// Remove stale cached APK entries
+	// clear apk_path_hash_list unconditionally
+	pr_info("search manager: cleanup!\n");
 	list_for_each_entry_safe(pos, n, &apk_path_hash_list, list) {
-		if (!pos->exists) {
-			list_del(&pos->list);
-			kfree(pos);
-		}
+		list_del(&pos->list);
+		kfree(pos);
 	}
 }
 
@@ -286,62 +423,84 @@ static bool is_uid_exist(uid_t uid, char *package, void *data)
 	return exist;
 }
 
-void track_throne()
+void track_throne(void)
 {
-	struct file *fp =
-		ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
-	if (IS_ERR(fp)) {
-		pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n",
-		       __func__, PTR_ERR(fp));
-		return;
-	}
-
 	struct list_head uid_list;
+	struct file *fp;
+	int ret = 0;
 	INIT_LIST_HEAD(&uid_list);
 
-	char chr = 0;
-	loff_t pos = 0;
-	loff_t line_start = 0;
-	char buf[KSU_MAX_PACKAGE_NAME];
-	for (;;) {
-		ssize_t count =
-			ksu_kernel_read_compat(fp, &chr, sizeof(chr), &pos);
-		if (count != sizeof(chr))
-			break;
-		if (chr != '\n')
-			continue;
-
-		count = ksu_kernel_read_compat(fp, buf, sizeof(buf),
-					       &line_start);
-
-		struct uid_data *data =
-			kzalloc(sizeof(struct uid_data), GFP_ATOMIC);
-		if (!data) {
-			filp_close(fp, 0);
-			goto out;
+	pr_info("Scanning %s directory..\n", USER_DATA_PATH);
+	ret = scan_user_data_for_uids(&uid_list);
+	if (ret != 0 && !is_scan_lock()) {
+		pr_warn("Failed to scan %s directory, falling back to packages.list.tmp\n", USER_DATA_PATH);
+		fp = ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+		if (IS_ERR(fp)) {
+			pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n", __func__, PTR_ERR(fp));
+			return;
+		}
+		
+		if (!is_pkg_lock()) {
+			pr_info_once("%s: locking to only read packages.list.tmp\n", __func__);
+			set_pkg_lock();
 		}
 
-		char *tmp = buf;
-		const char *delim = " ";
-		char *package = strsep(&tmp, delim);
-		char *uid = strsep(&tmp, delim);
-		if (!uid || !package) {
-			pr_err("update_uid: package or uid is NULL!\n");
-			break;
-		}
+		char chr = 0;
+		loff_t pos = 0;
+		loff_t line_start = 0;
+		char buf[KSU_MAX_PACKAGE_NAME];
+		for (;;) {
+			ssize_t count =
+				ksu_kernel_read_compat(fp, &chr, sizeof(chr), &pos);
+			if (count != sizeof(chr))
+				break;
+			if (chr != '\n')
+				continue;
 
-		u32 res;
-		if (kstrtou32(uid, 10, &res)) {
-			pr_err("update_uid: uid parse err\n");
-			break;
+			count = ksu_kernel_read_compat(fp, buf, sizeof(buf),
+						       &line_start);
+
+			struct uid_data *data =
+				kzalloc(sizeof(struct uid_data), GFP_ATOMIC);
+			if (!data) {
+				filp_close(fp, 0);
+				goto out;
+			}
+
+			char *tmp = buf;
+			const char *delim = " ";
+			char *package = strsep(&tmp, delim);
+			char *uid = strsep(&tmp, delim);
+			if (!uid || !package) {
+				pr_err("update_uid: package or uid is NULL!\n");
+				break;
+			}
+
+			u32 res;
+			if (kstrtou32(uid, 10, &res)) {
+				pr_err("update_uid: uid parse err\n");
+				break;
+			}
+			data->uid = res;
+			strncpy(data->package, package, KSU_MAX_PACKAGE_NAME);
+			list_add_tail(&data->list, &uid_list);
+			// reset line start
+			line_start = pos;
 		}
-		data->uid = res;
-		strncpy(data->package, package, KSU_MAX_PACKAGE_NAME);
-		list_add_tail(&data->list, &uid_list);
-		// reset line start
-		line_start = pos;
+		filp_close(fp, 0);
+	} else if (!is_pkg_lock()) {
+		pr_info("Scanned %zu package(s) from user data directory.\n", list_count_nodes(&uid_list));
+		if (!is_scan_lock()) {
+			pr_info_once("%s: locking to only read %s directory.\n", __func__, USER_DATA_PATH); 
+			set_scan_lock();
+		}
 	}
-	filp_close(fp, 0);
+	
+	// Precautions, incase both of them failed.
+	if (!is_pkg_lock() && !is_scan_lock()) {
+		pr_err("Failed to read %s or %s\n", SYSTEM_PACKAGES_LIST_PATH, USER_DATA_PATH);
+		return;
+	}
 
 	// now update uid list
 	struct uid_data *np;
@@ -363,12 +522,14 @@ void track_throne()
 		if (ksu_is_manager_uid_valid()) {
 			pr_info("manager is uninstalled, invalidate it!\n");
 			ksu_invalidate_manager_uid();
+			goto prune;
 		}
 		pr_info("Searching manager...\n");
 		search_manager("/data/app", 2, &uid_list);
 		pr_info("Search manager finished\n");
 	}
 
+prune:
 	// then prune the allowlist
 	ksu_prune_allowlist(is_uid_exist, &uid_list);
 out:
@@ -379,12 +540,12 @@ out:
 	}
 }
 
-void ksu_throne_tracker_init()
+void ksu_throne_tracker_init(void)
 {
 	// nothing to do
 }
 
-void ksu_throne_tracker_exit()
+void ksu_throne_tracker_exit(void)
 {
 	// nothing to do
 }
