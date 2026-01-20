@@ -2237,6 +2237,11 @@ long _do_fork(unsigned long clone_flags,
 	int trace = 0;
 	long nr;
 
+	/* Boost CPU to the max for 100 ms when userspace launches an app */
+	if (is_zygote_pid(current->pid)) {
+		devfreq_boost_kick_max(DEVFREQ_CPU_LLCC_DDR_BW, 100);
+	}
+	
 	/*
 	 * Determine whether and which event to report to ptracer.  When
 	 * called from kernel_thread or CLONE_UNTRACED is explicitly
