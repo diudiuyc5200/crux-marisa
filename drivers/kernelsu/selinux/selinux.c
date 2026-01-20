@@ -36,8 +36,9 @@ static int transive_to_domain(const char *domain)
 }
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 19, 0)
-bool __maybe_unused is_ksu_transition(const struct task_security_struct *old_tsec,
-			const struct task_security_struct *new_tsec)
+bool __maybe_unused
+is_ksu_transition(const struct task_security_struct *old_tsec,
+		  const struct task_security_struct *new_tsec)
 {
 	static u32 ksu_sid;
 	char *secdata;
@@ -45,7 +46,8 @@ bool __maybe_unused is_ksu_transition(const struct task_security_struct *old_tse
 	bool allowed = false;
 
 	if (!ksu_sid)
-		security_secctx_to_secid(KERNEL_SU_DOMAIN, strlen(KERNEL_SU_DOMAIN), &ksu_sid);
+		security_secctx_to_secid(KERNEL_SU_DOMAIN,
+					 strlen(KERNEL_SU_DOMAIN), &ksu_sid);
 
 	if (security_secid_to_secctx(old_tsec->sid, &secdata, &seclen))
 		return false;
@@ -151,4 +153,18 @@ bool is_zygote(void *sec)
 	security_release_secctx(domain, seclen);
 #endif
 	return result;
+}
+
+#define DEVPTS_DOMAIN "u:object_r:ksu_file:s0"
+
+u32 ksu_get_devpts_sid(void)
+{
+	u32 devpts_sid = 0;
+	int err = security_secctx_to_secid(DEVPTS_DOMAIN, strlen(DEVPTS_DOMAIN),
+					   &devpts_sid);
+
+	if (err)
+		pr_info("get devpts sid err %d\n", err);
+
+	return devpts_sid;
 }
