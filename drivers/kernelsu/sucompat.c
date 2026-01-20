@@ -66,11 +66,11 @@ static inline bool __is_su_allowed(const void *ptr_to_check)
 
 	return true;
 }
-#define is_su_allowed(ptr)	__is_su_allowed((const void *)ptr)
+#define is_su_allowed(ptr) __is_su_allowed((const void *)ptr)
 
 static int ksu_sucompat_user_common(const char __user **filename_user,
-				const char *syscall_name,
-				const bool escalate)
+				    const char *syscall_name,
+				    const bool escalate)
 {
 	char path[sizeof(su)]; // sizeof includes nullterm already!
 	memset(path, 0, sizeof(path));
@@ -144,8 +144,35 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 }
 
 // Dead code, we intercept this via userspace now!
+// 01/11/2025: Bring-back for MKSU/KSU compat!
 int ksu_handle_devpts(struct inode *inode)
 {
+	struct inode_security_struct *sec;
+	uid_t uid = current_uid().val;
+
+#ifndef CONFIG_KSU_KPROBES_HOOK
+	if (!ksu_sucompat_hook_state)
+		return 0;
+#endif
+
+	if (!current->mm)
+		return 0;
+	// not untrusted_app, ignore it
+	if (uid % 100000 < 10000)
+		return 0;
+	if (!ksu_is_allow_uid(uid))
+		return 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0) ||                           \
+	defined(KSU_OPTIONAL_SELINUX_INODE)
+	sec = selinux_inode(inode);
+#else
+	sec = (struct inode_security_struct *)inode->i_security;
+#endif
+
+	if (ksu_devpts_sid && sec)
+		sec->sid = ksu_devpts_sid;
+
 	return 0;
 }
 
@@ -183,7 +210,24 @@ static int execve_handler_pre(struct kprobe *p, struct pt_regs *regs)
 					  NULL);
 }
 
-static struct kprobe *su_kps[5];
+static int pts_unix98_lookup_pre(struct kprobe *p, struct pt_regs *regs)
+{
+	struct inode *inode;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+	struct file *file = (struct file *)PT_REGS_PARM2(regs);
+	inode = file->f_path.dentry->d_inode;
+#else
+	inode = (struct inode *)PT_REGS_PARM2(regs);
+#endif
+
+	return ksu_handle_devpts(inode);
+}
+
+#ifdef CONFIG_COMPAT
+static struct kprobe *su_kps[6];
+#else
+static struct kprobe *su_kps[4];
+#endif
 
 static struct kprobe *init_kprobe(const char *name,
 				  kprobe_pre_handler_t handler)
@@ -221,10 +265,13 @@ void ksu_sucompat_init(void)
 {
 #ifdef CONFIG_KSU_KPROBES_HOOK
 	su_kps[0] = init_kprobe(SYS_EXECVE_SYMBOL, execve_handler_pre);
-	su_kps[1] = init_kprobe(SYS_EXECVE_COMPAT_SYMBOL, execve_handler_pre);
-	su_kps[2] = init_kprobe(SYS_FACCESSAT_SYMBOL, faccessat_handler_pre);
-	su_kps[3] = init_kprobe(SYS_NEWFSTATAT_SYMBOL, newfstatat_handler_pre);
-	su_kps[4] = init_kprobe(SYS_FSTATAT64_SYMBOL, newfstatat_handler_pre);
+	su_kps[1] = init_kprobe(SYS_FACCESSAT_SYMBOL, faccessat_handler_pre);
+	su_kps[2] = init_kprobe(SYS_NEWFSTATAT_SYMBOL, newfstatat_handler_pre);
+	su_kps[3] = init_kprobe("pts_unix98_lookup", pts_unix98_lookup_pre);
+#ifdef CONFIG_COMPAT
+	su_kps[4] = init_kprobe(SYS_EXECVE_COMPAT_SYMBOL, execve_handler_pre);
+	su_kps[5] = init_kprobe(SYS_FSTATAT64_SYMBOL, newfstatat_handler_pre);
+#endif
 #else
 	ksu_sucompat_hook_state = true;
 	pr_info("ksu_sucompat init\n");

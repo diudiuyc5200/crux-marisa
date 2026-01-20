@@ -73,7 +73,9 @@ static inline bool is_unsupported_uid(uid_t uid)
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
-static struct group_info root_groups = { .usage = REFCOUNT_INIT(2), };
+static struct group_info root_groups = {
+	.usage = REFCOUNT_INIT(2),
+};
 #else
 static struct group_info root_groups = { .usage = ATOMIC_INIT(2) };
 #endif
@@ -137,12 +139,12 @@ static void disable_seccomp(struct task_struct *tsk)
 #ifdef CONFIG_SECCOMP
 	tsk->seccomp.mode = 0;
 	if (tsk->seccomp.filter) {
-	// 5.9+ have filter_count and use seccomp_filter_release
+		// 5.9+ have filter_count and use seccomp_filter_release
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
 		seccomp_filter_release(tsk);
 		atomic_set(&tsk->seccomp.filter_count, 0);
 #else
-	// for 6.11+ kernel support?
+		// for 6.11+ kernel support?
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
 		put_seccomp_filter(tsk);
 #endif
@@ -160,15 +162,14 @@ void escape_to_root(void)
 		pr_warn("Already root, don't escape!\n");
 		return;
 	}
-	
+
 	newcreds = prepare_creds();
 	if (newcreds == NULL) {
 		pr_err("%s: failed to allocate new cred.\n", __func__);
 		return;
 	}
 
-	struct root_profile *profile =
-		ksu_get_root_profile(newcreds->uid.val);
+	struct root_profile *profile = ksu_get_root_profile(newcreds->uid.val);
 
 	newcreds->uid.val = profile->uid;
 	newcreds->suid.val = profile->uid;
@@ -206,48 +207,9 @@ void escape_to_root(void)
 	setup_selinux(profile->selinux_domain);
 }
 
-int ksu_handle_rename(struct dentry *old_dentry, struct dentry *new_dentry)
+static void nuke_ext4_sysfs(void)
 {
-	if (!current->mm) {
-		// skip kernel threads
-		return 0;
-	}
-
-	if (current_uid().val != 1000) {
-		// skip non system uid
-		return 0;
-	}
-
-	if (!old_dentry || !new_dentry) {
-		return 0;
-	}
-
-	// /data/system/packages.list.tmp -> /data/system/packages.list
-	if (strcmp(new_dentry->d_iname, "packages.list")) {
-		return 0;
-	}
-
-	char path[128];
-	char *buf = dentry_path_raw(new_dentry, path, sizeof(path));
-	if (IS_ERR(buf)) {
-		pr_err("dentry_path_raw failed.\n");
-		return 0;
-	}
-
-	if (!strstr(buf, "/system/packages.list")) {
-		return 0;
-	}
-	pr_info("renameat: %s -> %s, new path: %s\n", old_dentry->d_iname,
-		new_dentry->d_iname, buf);
-
-	track_throne();
-
-	return 0;
-}
-
 #ifdef CONFIG_EXT4_FS
-static void nuke_ext4_sysfs(void) 
-{
 	struct path path;
 	int err = kern_path("/data/adb/modules", 0, &path);
 	if (err) {
@@ -255,8 +217,8 @@ static void nuke_ext4_sysfs(void)
 		return;
 	}
 
-	struct super_block* sb = path.dentry->d_inode->i_sb;
-	const char* name = sb->s_type->name;
+	struct super_block *sb = path.dentry->d_inode->i_sb;
+	const char *name = sb->s_type->name;
 	if (strcmp(name, "ext4") != 0) {
 		pr_info("nuke but module aren't mounted\n");
 		path_put(&path);
@@ -265,12 +227,8 @@ static void nuke_ext4_sysfs(void)
 
 	ext4_unregister_sysfs(sb);
 	path_put(&path);
-}
-#else
-static inline void nuke_ext4_sysfs(void)
-{
-}
 #endif
+}
 
 int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		     unsigned long arg4, unsigned long arg5)
@@ -285,9 +243,9 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		goto skip_check;
 
 	uid_t manager_uid = ksu_get_manager_uid();
-	if (current_uid_val != manager_uid && 
-		current_uid_val % 100000 == manager_uid) {
-			ksu_set_manager_uid(current_uid_val);
+	if (current_uid_val != manager_uid &&
+	    current_uid_val % 100000 == manager_uid) {
+		ksu_set_manager_uid(current_uid_val);
 	}
 
 skip_check:
@@ -346,8 +304,7 @@ skip_check:
 #ifdef MODULE
 		flags |= 0x1;
 #endif
-		if (arg4 &&
-		    copy_to_user(arg4, &flags, sizeof(flags))) {
+		if (arg4 && copy_to_user(arg4, &flags, sizeof(flags))) {
 			pr_err("prctl reply error, cmd: %lu\n", arg2);
 		}
 		return 0;
@@ -568,12 +525,13 @@ static bool should_umount(struct path *path)
 	return false;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || defined(KSU_HAS_PATH_UMOUNT)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                           \
+	defined(KSU_HAS_PATH_UMOUNT)
 static int ksu_path_umount(struct path *path, int flags)
 {
 	return path_umount(path, flags);
 }
-#define ksu_umount_mnt(__unused, path, flags)	(ksu_path_umount(path, flags))
+#define ksu_umount_mnt(__unused, path, flags) (ksu_path_umount(path, flags))
 #else
 static int ksu_sys_umount(const char *mnt, int flags)
 {
@@ -593,12 +551,12 @@ static int ksu_sys_umount(const char *mnt, int flags)
 	return ret;
 }
 
-#define ksu_umount_mnt(mnt, __unused, flags)		\
-	({						\
-		int ret;				\
-		path_put(__unused);			\
-		ret = ksu_sys_umount(mnt, flags);	\
-		ret;					\
+#define ksu_umount_mnt(mnt, __unused, flags)                                   \
+	({                                                                     \
+		int ret;                                                       \
+		path_put(__unused);                                            \
+		ret = ksu_sys_umount(mnt, flags);                              \
+		ret;                                                           \
 	})
 
 #endif
@@ -707,10 +665,16 @@ static int ksu_task_prctl(int option, unsigned long arg2, unsigned long arg3,
 	ksu_handle_prctl(option, arg2, arg3, arg4, arg5);
 	return -ENOSYS;
 }
+
+static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
+			       int flags)
+{
+	return ksu_handle_setuid(new, old);
+}
+
 // kernel 4.4 and 4.9
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||	\
-	defined(CONFIG_IS_HW_HISI) ||	\
-	defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||                           \
+	defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
 static int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
 			      unsigned perm)
 {
@@ -726,26 +690,13 @@ static int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
 	return 0;
 }
 #endif
-static int ksu_inode_rename(struct inode *old_inode, struct dentry *old_dentry,
-			    struct inode *new_inode, struct dentry *new_dentry)
-{
-	return ksu_handle_rename(old_dentry, new_dentry);
-}
-
-static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
-			       int flags)
-{
-	return ksu_handle_setuid(new, old);
-}
 
 #ifndef MODULE
 static struct security_hook_list ksu_hooks[] = {
 	LSM_HOOK_INIT(task_prctl, ksu_task_prctl),
-	LSM_HOOK_INIT(inode_rename, ksu_inode_rename),
 	LSM_HOOK_INIT(task_fix_setuid, ksu_task_fix_setuid),
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||	\
-	defined(CONFIG_IS_HW_HISI) ||	\
-	defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||                           \
+	defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
 	LSM_HOOK_INIT(key_permission, ksu_key_permission)
 #endif
 };
@@ -771,26 +722,6 @@ void __init ksu_lsm_hook_init(void)
 }
 
 #else
-// keep renameat_handler for LKM support
-static int renameat_handler_pre(struct kprobe *p, struct pt_regs *regs)
-{
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	// https://elixir.bootlin.com/linux/v5.12-rc1/source/include/linux/fs.h
-	struct renamedata *rd = PT_REGS_PARM1(regs);
-	struct dentry *old_entry = rd->old_dentry;
-	struct dentry *new_entry = rd->new_dentry;
-#else
-	struct dentry *old_entry = (struct dentry *)PT_REGS_PARM2(regs);
-	struct dentry *new_entry = (struct dentry *)PT_REGS_CCALL_PARM4(regs);
-#endif
-
-	return ksu_handle_rename(old_entry, new_entry);
-}
-
-static struct kprobe renameat_kp = {
-	.symbol_name = "vfs_rename",
-	.pre_handler = renameat_handler_pre,
-};
 
 static int override_security_head(void *head, const void *new_head, size_t len)
 {
@@ -925,25 +856,6 @@ void __init ksu_lsm_hook_init(void)
 		pr_warn("Failed to find task_prctl!\n");
 	}
 
-	int inode_killpriv_index = -1;
-	void *cap_killpriv = GET_SYMBOL_ADDR(cap_inode_killpriv);
-	find_head_addr(cap_killpriv, &inode_killpriv_index);
-	if (inode_killpriv_index < 0) {
-		pr_warn("Failed to find inode_rename, use kprobe instead!\n");
-		register_kprobe(&renameat_kp);
-	} else {
-		int inode_rename_index = inode_killpriv_index +
-					 &security_hook_heads.inode_rename -
-					 &security_hook_heads.inode_killpriv;
-		struct hlist_head *head_start =
-			(struct hlist_head *)&security_hook_heads;
-		void *inode_rename_head = head_start + inode_rename_index;
-		if (inode_rename_head != &security_hook_heads.inode_rename) {
-			pr_warn("inode_rename's address has shifted!\n");
-		}
-		KSU_LSM_HOOK_HACK_INIT(inode_rename_head, inode_rename,
-				       ksu_inode_rename);
-	}
 	void *cap_setuid = GET_SYMBOL_ADDR(cap_task_fix_setuid);
 	void *setuid_head = find_head_addr(cap_setuid, NULL);
 	if (setuid_head) {
