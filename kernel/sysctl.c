@@ -142,6 +142,7 @@ static int six_hundred_forty_kb = 640 * 1024;
 #endif
 static int two_hundred_fifty_five = 255;
 static int __maybe_unused two_hundred_million = 200000000;
+static int __maybe_unused max_kswapd_threads = MAX_KSWAPD_THREADS;
 
 #ifdef CONFIG_SCHED_WALT
 const int sched_user_hint_max = 1000;
