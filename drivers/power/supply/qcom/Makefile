@@ -16,3 +16,6 @@ obj-$(CONFIG_IDT_P9220)		+= idtp9220.o
 obj-$(CONFIG_LN8282)		+= ln8282.o
 obj-$(CONFIG_HALO_7221)		+= halo_7221_cp.o
 obj-$(CONFIG_SMB1390_CHARGE_PUMP_PSY)	+= smb1390-charger-psy.o pmic-voter.o
+obj-$(CONFIG_CHARGER_NU1618)	+= rx1618.o
+obj-$(CONFIG_BQ2597X_CHARGE_PUMP)	+= bq2597x_charger.o cp_qc30.o
+obj-$(CONFIG_CHARGER_LN8000)	+= ln8000_charger.o cp_qc30.o
