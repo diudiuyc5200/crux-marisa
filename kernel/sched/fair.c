@@ -10001,12 +10001,7 @@ void update_group_capacity(struct sched_domain *sd, int cpu)
 	struct sched_domain *child = sd->child;
 	struct sched_group *group, *sdg = sd->groups;
 	unsigned long capacity, min_capacity, max_capacity;
-	unsigned long interval;
-
-	interval = msecs_to_jiffies(sd->balance_interval);
-	interval = clamp(interval, 1UL, max_load_balance_interval);
-	sdg->sgc->next_update = jiffies + interval;
-
+	
 	if (!child) {
 		update_cpu_capacity(sd, cpu);
 		return;
@@ -10514,10 +10509,6 @@ static inline void update_sd_lb_stats(struct lb_env *env, struct sd_lb_stats *sd
 		if (local_group) {
 			sds->local = sg;
 			sgs = local;
-
-			if (env->idle != CPU_NEWLY_IDLE ||
-			    time_after_eq(jiffies, sg->sgc->next_update))
-				update_group_capacity(env->sd, env->dst_cpu);
 		}
 
 		update_sg_lb_stats(env, sg, load_idx, local_group, sgs,
@@ -13374,6 +13365,7 @@ void check_for_migration(struct rq *rq, struct task_struct *p)
 	int new_cpu = -1;
 	int cpu = smp_processor_id();
 	int prev_cpu = task_cpu(p);
+	int ret;
 	struct sched_domain *sd = NULL;
 
 	if (rq->misfit_task_load) {
@@ -13394,9 +13386,13 @@ void check_for_migration(struct rq *rq, struct task_struct *p)
 			if (active_balance) {
 				mark_reserved(new_cpu);
 				raw_spin_unlock(&migration_lock);
-				stop_one_cpu_nowait(prev_cpu,
+				ret = stop_one_cpu_nowait(prev_cpu,
 					active_load_balance_cpu_stop, rq,
 					&rq->active_balance_work);
+					if (!ret)
+					clear_reserved(new_cpu);
+				else
+					wake_up_if_idle(new_cpu);
 				return;
 			}
 		} else {
