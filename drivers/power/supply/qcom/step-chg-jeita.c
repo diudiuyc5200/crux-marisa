@@ -940,6 +940,7 @@ int qcom_step_chg_init(struct device *dev,
 		return -ENOMEM;
 
 	chip->step_chg_ws = wakeup_source_register(chip->dev, "qcom-step-chg");
+
 	if (!chip->step_chg_ws)
 		return -EINVAL;
 
