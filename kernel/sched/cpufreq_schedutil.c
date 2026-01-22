@@ -23,8 +23,6 @@
 #include <linux/binfmts.h>
 
 #define SUGOV_KTHREAD_PRIORITY	50
-#define UP_RATE_LIMIT_US		(500)
-#define DOWN_RATE_LIMIT_US		(2000)
 
 /* 添加 task_is_booster 函数声明 */
 extern bool task_is_booster(struct task_struct *p);
@@ -1099,8 +1097,8 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->up_rate_limit_us = UP_RATE_LIMIT_US;
-	tunables->down_rate_limit_us = DOWN_RATE_LIMIT_US;
+	tunables->up_rate_limit_us = CONFIG_SCHEDUTIL_UP_RATE_LIMIT;
+	tunables->down_rate_limit_us = CONFIG_SCHEDUTIL_DOWN_RATE_LIMIT;
 	tunables->hispeed_load = DEFAULT_HISPEED_LOAD;
 	tunables->hispeed_freq = 0;
 
