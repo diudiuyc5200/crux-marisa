@@ -22,8 +22,8 @@
 #include <linux/sched/rt.h>
 
 #define SUGOV_KTHREAD_PRIORITY	50
-#define UP_RATE_LIMIT_US		(1000)
-#define DOWN_RATE_LIMIT_US		(1000)
+#define UP_RATE_LIMIT_US		(500)
+#define DOWN_RATE_LIMIT_US		(2000)
 
 /* 添加 task_is_booster 函数声明 */
 extern bool task_is_booster(struct task_struct *p);
