@@ -7601,21 +7601,13 @@ static inline bool task_fits_max(struct task_struct *p, int cpu)
 {
 	unsigned long capacity = capacity_orig_of(cpu);
 	unsigned long max_capacity = cpu_rq(cpu)->rd->max_cpu_capacity.val;
-	unsigned long task_boost = per_task_boost(p);
 
 	if (capacity == max_capacity)
 		return true;
 
-	if (is_min_capacity_cpu(cpu)) {
-		if (task_boost_policy(p) == SCHED_BOOST_ON_BIG ||
-			task_boost > 0 ||
-			schedtune_task_boost(p) > 0 ||
-			walt_should_kick_upmigrate(p, cpu))
-			return false;
-	} else { /* mid cap cpu */
-		if (task_boost > 1)
-			return false;
-	}
+	if (task_boost_policy(p) == SCHED_BOOST_ON_BIG &&
+			is_min_capacity_cpu(cpu))
+		return false;
 
 	return task_fits_capacity(p, capacity, cpu);
 }
