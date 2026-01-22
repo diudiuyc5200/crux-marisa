@@ -1229,14 +1229,6 @@ int dsi_display_set_power(struct drm_connector *connector,
 		pr_err("invalid display/panel\n");
 		return -EINVAL;
 	}
-
-	if (!connector || !connector->dev) {
-        pr_err("invalid connector/dev\n");
-        return -EINVAL;
-    } else {
-            dev = connector->dev;
-            event = dev->doze_state;
-	}
 	
 	notify_data.data = &power_mode;
 	notify_data.id = MSM_DRM_PRIMARY_DISPLAY;
