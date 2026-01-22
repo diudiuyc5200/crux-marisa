@@ -773,6 +773,67 @@ static void bbr_update_bw(struct sock *sk, const struct rate_sample *rs)
 	}
 }
 
+/* Estimates the windowed max degree of ack aggregation.
+ * This is used to provision extra in-flight data to keep sending during
+ * inter-ACK silences.
+ *
+ * Degree of ack aggregation is estimated as extra data acked beyond expected.
+ *
+ * max_extra_acked = "maximum recent excess data ACKed beyond max_bw * interval"
+ * cwnd += max_extra_acked
+ *
+ * Max extra_acked is clamped by cwnd and bw * bbr_extra_acked_max_us (100 ms).
+ * Max filter is an approximate sliding window of 5-10 (packet timed) round
+ * trips.
+ */
+static void bbr_update_ack_aggregation(struct sock *sk,
+				       const struct rate_sample *rs)
+{
+	u32 epoch_us, expected_acked, extra_acked;
+	struct bbr *bbr = inet_csk_ca(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
+
+	if (!bbr_extra_acked_gain || rs->acked_sacked <= 0 ||
+	    rs->delivered < 0 || rs->interval_us <= 0)
+		return;
+
+	if (bbr->round_start) {
+		bbr->extra_acked_win_rtts = min(0x1F,
+						bbr->extra_acked_win_rtts + 1);
+		if (bbr->extra_acked_win_rtts >= bbr_extra_acked_win_rtts) {
+			bbr->extra_acked_win_rtts = 0;
+			bbr->extra_acked_win_idx = bbr->extra_acked_win_idx ?
+						   0 : 1;
+			bbr->extra_acked[bbr->extra_acked_win_idx] = 0;
+		}
+	}
+
+	/* Compute how many packets we expected to be delivered over epoch. */
+	epoch_us = tcp_stamp_us_delta(tp->delivered_mstamp,
+				      bbr->ack_epoch_mstamp);
+	expected_acked = ((u64)bbr_bw(sk) * epoch_us) / BW_UNIT;
+
+	/* Reset the aggregation epoch if ACK rate is below expected rate or
+	 * significantly large no. of ack received since epoch (potentially
+	 * quite old epoch).
+	 */
+	if (bbr->ack_epoch_acked <= expected_acked ||
+	    (bbr->ack_epoch_acked + rs->acked_sacked >=
+	     bbr_ack_epoch_acked_reset_thresh)) {
+		bbr->ack_epoch_acked = 0;
+		bbr->ack_epoch_mstamp = tp->delivered_mstamp;
+		expected_acked = 0;
+	}
+
+	/* Compute excess data delivered, beyond what was expected. */
+	bbr->ack_epoch_acked = min_t(u32, 0xFFFFF,
+				     bbr->ack_epoch_acked + rs->acked_sacked);
+	extra_acked = bbr->ack_epoch_acked - expected_acked;
+	extra_acked = min(extra_acked, tp->snd_cwnd);
+	if (extra_acked > bbr->extra_acked[bbr->extra_acked_win_idx])
+		bbr->extra_acked[bbr->extra_acked_win_idx] = extra_acked;
+}
+
 /* Estimate when the pipe is full, using the change in delivery rate: BBR
  * estimates that STARTUP filled the pipe if the estimated bw hasn't changed by
  * at least bbr_full_bw_thresh (25%) after bbr_full_bw_cnt (3) non-app-limited
