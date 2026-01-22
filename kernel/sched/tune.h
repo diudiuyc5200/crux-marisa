@@ -26,7 +26,7 @@ void schedtune_dequeue_task(struct task_struct *p, int cpu);
 
 #define schedtune_cpu_boost(cpu)  0
 #define schedtune_task_boost(tsk) 0
-
+#define schedtune_prefer_high_cap(tsk) 0
 #define schedtune_prefer_idle(tsk) 0
 
 #define schedtune_enqueue_task(task, cpu) do { } while (0)
