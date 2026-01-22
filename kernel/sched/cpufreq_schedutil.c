@@ -20,6 +20,7 @@
 #include "sched.h"
 #include <linux/sched.h>
 #include <linux/sched/rt.h>
+#include <linux/binfmts.h>
 
 #define SUGOV_KTHREAD_PRIORITY	50
 #define UP_RATE_LIMIT_US		(500)
