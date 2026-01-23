@@ -220,7 +220,6 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 		goto error;
 	}
 
-	panel->bl_config.bl_level = bl_lvl;
 
 	/* scale backlight */
 	bl_scale = panel->bl_config.bl_scale;
@@ -232,6 +231,19 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 	pr_debug("bl_scale = %u, bl_scale_ad = %u, bl_lvl = %u\n",
 		bl_scale, bl_scale_ad, (u32)bl_temp);
 
+		if (bl_lvl > 2047 && panel->bl_config.bl_level <= 2047)
+	{
+		panel->hbm_mode = 1;
+		rc = dsi_panel_apply_hbm_mode(panel);
+	}
+	else if (bl_lvl <= 2047 && panel->bl_config.bl_level > 2047)
+	{
+		panel->hbm_mode = 0;
+		rc = dsi_panel_apply_hbm_mode(panel);
+	}
+
+	panel->bl_config.bl_level = bl_lvl;
+	
 	rc = dsi_display_clk_ctrl(dsi_display->dsi_clk_handle,
 			DSI_CORE_CLK, DSI_CLK_ON);
 	if (rc) {
