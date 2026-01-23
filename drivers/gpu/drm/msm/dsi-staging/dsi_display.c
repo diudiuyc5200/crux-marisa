@@ -1244,7 +1244,8 @@ struct blbl aod_bl_lut[] = {
 	{10, 1},
 	{40, 9},
 	{90, 30},
-	{120, 40},
+    {120, 60},
+	{280, 100},
 };
 
 u32 dsi_panel_get_aod_bl(struct dsi_display *display) {
@@ -1252,13 +1253,13 @@ u32 dsi_panel_get_aod_bl(struct dsi_display *display) {
 	//cached value is better than reading display->panel->bl_config.bl_level
 	u32 cur_bl = dsi_panel_backlight_get();
 
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < 6; i++)
                 if (aod_bl_lut[i].bl >= cur_bl)
                         break;
         if (i == 0)
                 return aod_bl_lut[i].aod_bl;
 
-        if (i == 4)
+        if (i == 5)
                 return aod_bl_lut[i - 1].aod_bl;
 
         return interpolate(cur_bl,
@@ -1287,16 +1288,12 @@ int dsi_display_set_power(struct drm_connector *connector,
 
 	switch (power_mode) {
 	case SDE_MODE_DPMS_LP1:
-		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &notify_data);
 		rc = dsi_panel_set_lp1(display->panel);
-		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &notify_data);
 		break;
 	case SDE_MODE_DPMS_LP2:
-		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK, &notify_data);
 		dsi_panel_set_backlight(display->panel, dsi_panel_get_aod_bl(display));
-		usleep_range(20000, 30000);
+		usleep_range(16000, 24000);
 		rc = dsi_panel_set_lp2(display->panel);
-		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK, &notify_data);
 		break;
 	case SDE_MODE_DPMS_ON:
 		if (display->panel->power_mode == SDE_MODE_DPMS_LP1 ||
