@@ -220,7 +220,6 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 		goto error;
 	}
 
-
 	/* scale backlight */
 	bl_scale = panel->bl_config.bl_scale;
 	bl_temp = bl_lvl * bl_scale / MAX_BL_SCALE_LEVEL;
@@ -231,19 +230,6 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 	pr_debug("bl_scale = %u, bl_scale_ad = %u, bl_lvl = %u\n",
 		bl_scale, bl_scale_ad, (u32)bl_temp);
 
-		if (bl_lvl > 2047 && panel->bl_config.bl_level <= 2047)
-	{
-		panel->hbm_mode = 1;
-		rc = dsi_panel_apply_hbm_mode(panel);
-	}
-	else if (bl_lvl <= 2047 && panel->bl_config.bl_level > 2047)
-	{
-		panel->hbm_mode = 0;
-		rc = dsi_panel_apply_hbm_mode(panel);
-	}
-
-	panel->bl_config.bl_level = bl_lvl;
-	
 	rc = dsi_display_clk_ctrl(dsi_display->dsi_clk_handle,
 			DSI_CORE_CLK, DSI_CLK_ON);
 	if (rc) {
@@ -255,9 +241,19 @@ int dsi_display_set_backlight(struct drm_connector *connector,
 	rc = dsi_panel_set_backlight(panel, (u32)bl_temp);
 	if (rc)
 		pr_err("unable to set backlight\n");
-	else
-		pr_info("set backlight successfully at: bl_scale = %u, bl_scale_ad = %u, bl_lvl = %u\n", bl_scale, bl_scale_ad, (u32)bl_temp);
 
+	if (bl_lvl == 4095 && panel->bl_config.bl_level <= 2047)
+	{
+		panel->hbm_mode = 1;
+		rc = dsi_panel_apply_hbm_mode(panel);
+	}
+	else if (bl_lvl <= 2047 && panel->bl_config.bl_level == 4095)
+	{
+		panel->hbm_mode = 0;
+		rc = dsi_panel_apply_hbm_mode(panel);
+	}
+
+	panel->bl_config.bl_level = bl_lvl;
 	rc = dsi_display_clk_ctrl(dsi_display->dsi_clk_handle,
 			DSI_CORE_CLK, DSI_CLK_OFF);
 	if (rc) {
@@ -5258,7 +5254,70 @@ error:
 	return rc;
 }
 
+static ssize_t sysfs_hbm_read(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct dsi_display *display = dev_get_drvdata(dev);
+	if (!display->panel)
+		return 0;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", display->panel->hbm_mode);
+}
+
+static ssize_t sysfs_hbm_write(struct device *dev,
+	    struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct dsi_display *display = dev_get_drvdata(dev);
+	int ret, hbm_mode;
+
+	if (!display->panel)
+		return -EINVAL;
+
+        if (display->panel->bl_config.bl_level > 2047)
+                return count;
+
+	ret = kstrtoint(buf, 10, &hbm_mode);
+	if (ret) {
+		pr_err("kstrtoint failed. ret=%d\n", ret);
+		return ret;
+	}
+
+	mutex_lock(&display->display_lock);
+
+	display->panel->hbm_mode = hbm_mode;
+	if (!dsi_panel_initialized(display->panel))
+		goto error;
+
+	ret = dsi_display_clk_ctrl(display->dsi_clk_handle,
+			DSI_CORE_CLK, DSI_CLK_ON);
+	if (ret) {
+		pr_err("[%s] failed to enable DSI core clocks, rc=%d\n",
+		       display->name, ret);
+		goto error;
+	}
+
+	ret = dsi_panel_apply_hbm_mode(display->panel);
+	if (ret)
+		pr_err("unable to set hbm mode\n");
+
+	ret = dsi_display_clk_ctrl(display->dsi_clk_handle,
+			DSI_CORE_CLK, DSI_CLK_OFF);
+	if (ret) {
+		pr_err("[%s] failed to disable DSI core clocks, rc=%d\n",
+		       display->name, ret);
+		goto error;
+	}
+error:
+	mutex_unlock(&display->display_lock);
+	return ret == 0 ? count : ret;
+}
+
+static DEVICE_ATTR(hbm, 0644,
+			sysfs_hbm_read,
+			sysfs_hbm_write);
+			
 static struct attribute *display_fs_attrs[] = {
+	&dev_attr_hbm.attr,
 	NULL,
 };
 static struct attribute_group display_fs_attrs_group = {
