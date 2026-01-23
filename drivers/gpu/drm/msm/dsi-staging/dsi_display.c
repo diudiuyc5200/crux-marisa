@@ -1231,7 +1231,7 @@ static bool dsi_display_get_cont_splash_status(struct dsi_display *display)
 static u32 interpolate(uint32_t x, uint32_t xa, uint32_t xb,
 		uint32_t ya, uint32_t yb)
 {
-	return ya - (ya - yb) * (x - xa) / (xb - xa);
+	return ya + (yb - ya) * (x - xa) / (xb - xa);
 }
 
 struct blbl {
