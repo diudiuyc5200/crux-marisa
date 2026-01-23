@@ -8724,7 +8724,7 @@ pick_cpu:
 
 			if (want_affine)
 				current->recent_used_cpu = cpu;
-			
+		}
 	} else {
 		if (energy_sd)
 			new_cpu = find_energy_efficient_cpu(energy_sd, p, cpu,
