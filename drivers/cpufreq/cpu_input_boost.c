@@ -61,6 +61,7 @@ module_param(cpu_freq_idle_little, uint, 0644);
 
 module_param(input_boost_duration, short, 0644);
 module_param(wake_boost_duration, short, 0644);
+static bool input_boost_enable = true;
 
 unsigned long last_input_time;
 unsigned long last_mb_time; 
