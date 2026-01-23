@@ -129,6 +129,7 @@ struct fuse_conn;
  */
 struct fuse_passthrough {
 	struct file *filp;
+struct cred *cred;
 };
 
 /** FUSE specific file data */
