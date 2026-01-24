@@ -300,6 +300,7 @@ struct dsi_panel {
 	bool fodflag;
 	int power_mode;
 	enum dsi_panel_physical_type panel_type;
+int hbm_mode;
 
 	u8 panel_read_data[BUF_LEN_MAX];
 	struct dsi_read_config xy_coordinate_cmds;
