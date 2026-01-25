@@ -120,6 +120,18 @@ extern int sysctl_nr_trim_pages;
 static int sixty = 60;
 #endif
 
+#ifdef CONFIG_SCHED_BORE
+extern uint sched_bore;
+extern uint sched_burst_smoothness_long;
+extern uint sched_burst_smoothness_short;
+extern uint sched_burst_fork_atavistic;
+extern uint sched_burst_penalty_offset;
+extern uint sched_burst_penalty_scale;
+extern uint sched_burst_cache_lifetime;
+static int __maybe_unused sixty_four     = 64;
+static int __maybe_unused maxval_12_bits = 4095;
+#endif // CONFIG_SCHED_BORE
+
 static int __maybe_unused neg_one = -1;
 static int __maybe_unused neg_three = -3;
 
