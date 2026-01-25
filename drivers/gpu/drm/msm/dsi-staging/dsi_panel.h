@@ -190,6 +190,12 @@ struct dsi_read_config {
 	u8 rbuf[BUF_LEN_MAX];
 };
 
+#define BRIGHTNESS_ALPHA_PAIR_LEN 2
+struct brightness_alpha_pair {
+	u32 brightness;
+	u32 alpha;
+};
+
 struct dsi_panel {
 	const char *name;
 	const char *type;
