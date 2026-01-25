@@ -178,6 +178,10 @@ static void sde_hw_lm_clear_dim_layer(struct sde_hw_mixer *ctx)
 	int stage_off, i;
 	u32 reset = BIT(16), val;
 
+	if (!ctx->dim.enabled)
+		return;
+
+	ctx->dim.enabled = false;
 	reset = ~reset;
 	for (i = SDE_STAGE_0; i <= sblk->maxblendstages; i++) {
 		stage_off = _stage_offset(ctx, i);
