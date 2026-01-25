@@ -1328,7 +1328,8 @@ static int gmu_aop_mailbox_init(struct kgsl_device *device,
 		return PTR_ERR(mailbox->channel);
 	}
 
-	set_bit(ADRENO_ACD_CTRL, &adreno_dev->pwrctrl_flag);
+	if (adreno_dev->speed_bin)
+		set_bit(ADRENO_ACD_CTRL, &adreno_dev->pwrctrl_flag);
 
 	return 0;
 }
