@@ -14,20 +14,26 @@
 
 // 添加条件编译定义
 #ifndef attach_page_private
-static inline void attach_page_private(struct page *page, unsigned long data)
+static inline void attach_page_private(struct page *page, void *data)
 {
-    page->private = data;
-    SetPagePrivate(page);
+	get_page(page);
+	set_page_private(page, (unsigned long)data);
+	SetPagePrivate(page);
 }
 #endif
 
 #ifndef detach_page_private
-static inline unsigned long detach_page_private(struct page *page)
+static inline void *detach_page_private(struct page *page)
 {
-    unsigned long data = page_private(page);
-    ClearPagePrivate(page);
-    page->private = 0;
-    return data;
+	void *data = (void *)page_private(page);
+
+	if (!PagePrivate(page))
+		return NULL;
+	ClearPagePrivate(page);
+	set_page_private(page, 0);
+	put_page(page);
+
+	return data;
 }
 #endif
 
