@@ -312,6 +312,9 @@ int hbm_mode;
 	struct dsi_read_config xy_coordinate_cmds;
 	struct dsi_read_config max_luminance_cmds;
 	struct lockdowninfo_cfg lockdowninfo_read;
+
+struct brightness_alpha_pair *fod_dim_lut;
+	u32 fod_dim_lut_count;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
