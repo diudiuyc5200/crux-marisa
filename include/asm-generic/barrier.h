@@ -241,8 +241,24 @@ do {									\
 			break;					\
 		cpu_relax();					\
 	}							\
-	smp_acquire__after_ctrl_dep();				\
 	VAL;							\
+})
+#endif
+
+/**
+ * smp_cond_load_acquire() - (Spin) wait for cond with ACQUIRE ordering
+ * @ptr: pointer to the variable to wait on
+ * @cond: boolean expression to wait for
+ *
+ * Equivalent to using smp_load_acquire() on the condition variable but employs
+ * the control dependency of the wait to reduce the barrier on many platforms.
+ */
+#ifndef smp_cond_load_acquire
+#define smp_cond_load_acquire(ptr, cond_expr) ({		\
+	typeof(*ptr) _val;					\
+	_val = smp_cond_load_relaxed(ptr, cond_expr);		\
+	smp_acquire__after_ctrl_dep();				\
+	_val;							\
 })
 #endif
 
