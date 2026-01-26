@@ -1030,9 +1030,15 @@ static struct kgsl_process_private *kgsl_process_private_new(
 	/* Search in the process list */
 	list_for_each_entry(private, &kgsl_driver.process_list, list) {
 		if (private->pid == cur_pid) {
-			if (!kgsl_process_private_get(private)) {
-				private = ERR_PTR(-EINVAL);
-			}
+			if (!kgsl_process_private_get(private))
+				/*
+				 * This will happen only if refcount is zero
+				 * i.e. destroy is triggered but didn't complete
+				 * yet. Return -EEXIST to indicate caller that
+				 * destroy is pending to allow caller to take
+				 * appropriate action.
+				 */
+				private = ERR_PTR(-EEXIST);
 			/*
 			 * We need to hold only one reference to the PID for
 			 * each process struct to avoid overflowing the
