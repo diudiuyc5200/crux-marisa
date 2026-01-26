@@ -1184,6 +1184,27 @@ done:
 	return private;
 }
 
+static struct kgsl_process_private *kgsl_process_private_open(
+		struct kgsl_device *device)
+{
+	struct kgsl_process_private *private;
+	int i;
+
+	private = _process_private_open(device);
+
+	/*
+	 * If we get error and error is -EEXIST that means previous process
+	 * private destroy is triggered but didn't complete. Retry creating
+	 * process private after sometime to allow previous destroy to complete.
+	 */
+	for (i = 0; (PTR_ERR_OR_ZERO(private) == -EEXIST) && (i < 5); i++) {
+		usleep_range(10, 100);
+		private = _process_private_open(device);
+	}
+
+	return private;
+}
+
 static int kgsl_close_device(struct kgsl_device *device)
 {
 	int result = 0;
