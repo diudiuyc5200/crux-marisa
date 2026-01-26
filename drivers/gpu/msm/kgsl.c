@@ -18,6 +18,7 @@
 #include <linux/fdtable.h>
 #include <linux/list.h>
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
