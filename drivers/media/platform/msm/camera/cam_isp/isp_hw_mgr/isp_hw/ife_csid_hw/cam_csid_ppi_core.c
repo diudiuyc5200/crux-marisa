@@ -116,6 +116,7 @@ clk_disable:
 	for (--i; i >= 0; i--)
 		cam_soc_util_clk_disable(soc_info->clk[i],
 			soc_info->clk_name[i]);
+	ppi_hw->hw_info->open_count--;
 	return rc;
 }
 
@@ -130,6 +131,18 @@ static int cam_csid_ppi_disable_hw(struct cam_csid_ppi_hw *ppi_hw)
 	CAM_DBG(CAM_ISP, "PPI:%d De-init PPI HW",
 		ppi_hw->hw_intf->hw_idx);
 
+	if (!ppi_hw->hw_info->open_count) {
+		CAM_WARN(CAM_ISP, "ppi[%d] unbalanced disable hw",
+			ppi_hw->hw_intf->hw_idx);
+		return -EINVAL;
+	}
+	/* Decrement the ref count */
+	ppi_hw->hw_info->open_count--;
+
+	/* Check for ref count */
+	if (ppi_hw->hw_info->open_count)
+		return rc;
+	
 	soc_info = &ppi_hw->hw_info->soc_info;
 	ppi_reg = ppi_hw->ppi_info->ppi_reg;
 
