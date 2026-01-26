@@ -1156,7 +1156,7 @@ static void kgsl_process_private_close(struct kgsl_device_private *dev_priv,
 }
 
 
-static struct kgsl_process_private *kgsl_process_private_open(
+static struct kgsl_process_private *_process_private_open(
 		struct kgsl_device *device)
 {
 	struct kgsl_process_private *private;
