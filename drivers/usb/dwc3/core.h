@@ -1455,6 +1455,10 @@ static inline int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc,
 { return 0; }
 static inline void dwc3_gadget_disable_irq(struct dwc3 *dwc)
 { }
+static int dwc3_core_init(struct dwc3 *dwc)
+{ return 0; }
+static int dwc3_event_buffers_setup(struct dwc3 *dwc)
+{ return 0; }
 #endif
 
 #if IS_ENABLED(CONFIG_USB_DWC3_DUAL_ROLE)
