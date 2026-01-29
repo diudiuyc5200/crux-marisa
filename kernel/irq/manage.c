@@ -20,8 +20,21 @@
 #include <linux/sched/task.h>
 #include <uapi/linux/sched/types.h>
 #include <linux/task_work.h>
+#include <linux/cpu.h>
 
 #include "internals.h"
+
+struct irq_desc_list {
+	struct list_head list;
+	struct irq_desc *desc;
+	unsigned int perf_flag;
+};
+
+static LIST_HEAD(perf_crit_irqs);
+static DEFINE_RAW_SPINLOCK(perf_irqs_lock);
+static int perf_cpu_index = -1;
+static int prime_cpu_index = -1;
+static bool perf_crit_suspended;
 
 #ifdef CONFIG_IRQ_FORCED_THREADING
 __read_mostly bool force_irqthreads;
