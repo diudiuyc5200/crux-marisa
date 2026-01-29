@@ -209,6 +209,9 @@ void irq_migrate_all_off_this_cpu(void)
 					    irq, smp_processor_id());
 		}
 	}
+
+	if (!cpumask_test_cpu(smp_processor_id(), cpu_lp_mask))
+		reaffine_perf_irqs(true);
 }
 
 static void irq_restore_affinity_of_irq(struct irq_desc *desc, unsigned int cpu)
