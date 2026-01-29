@@ -160,7 +160,8 @@ bool irq_can_set_affinity_usr(unsigned int irq)
 	struct irq_desc *desc = irq_to_desc(irq);
 
 	return __irq_can_set_affinity(desc) &&
-		!irqd_affinity_is_managed(&desc->irq_data);
+		!irqd_affinity_is_managed(&desc->irq_data) &&
+		!irqd_has_set(&desc->irq_data, IRQD_PERF_CRITICAL);
 }
 
 /**
