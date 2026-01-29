@@ -258,5 +258,8 @@ int irq_affinity_online_cpu(unsigned int cpu)
 	}
 	irq_unlock_sparse();
 
+	if (!cpumask_test_cpu(cpu, cpu_lp_mask))
+		reaffine_perf_irqs(true);
+	
 	return 0;
 }
