@@ -665,13 +665,20 @@ static bool check_for_block(struct wakeup_source *ws)
  */
 static void wakeup_source_report_event(struct wakeup_source *ws, bool hard)
 {
-	ws->event_count++;
-	/* This is racy, but the counter is approximate anyway. */
-	if (events_check_enabled)
-		ws->wakeup_count++;
+	#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+	if (!check_for_block(ws))	// AP: check if wakelock is on wakelock blocker list
+	{
+#endif
+		ws->event_count++;
+		/* This is racy, but the counter is approximate anyway. */
+		if (events_check_enabled)
+			ws->wakeup_count++;
 
-	if (!ws->active)
-		wakeup_source_activate(ws);
+		if (!ws->active)
+			wakeup_source_activate(ws);
+#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+	}
+#endif
 
 	if (hard)
 		pm_system_wakeup();
