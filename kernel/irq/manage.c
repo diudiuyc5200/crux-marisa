@@ -1603,7 +1603,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 				irq, omsk, nmsk);
 	}
 
-	*old_ptr = new;
+	if (!irqd_has_set(&desc->irq_data, IRQD_PERF_CRITICAL))
+		*old_ptr = new;
 
 	irq_pm_install_action(desc, new);
 
