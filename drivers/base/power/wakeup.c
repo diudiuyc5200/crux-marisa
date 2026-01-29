@@ -945,6 +945,9 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 						"Pending Wakeup Sources: ");
 			len += scnprintf(pending_wakeup_source + len, max - len,
 				"%s ", ws->name);
+			#ifdef CONFIG_BOEFFLA_WL_BLOCKER
+			if (!check_for_block(ws))	// AP: check if wakelock is on wakelock blocker list
+#endif				
 			active = true;
 		} else if (!active &&
 			   (!last_active_ws ||
