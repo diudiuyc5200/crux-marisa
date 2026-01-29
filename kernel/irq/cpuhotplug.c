@@ -69,6 +69,9 @@ static bool migrate_one_irq(struct irq_desc *desc)
 		return false;
 	}
 
+	if (irqd_has_set(d, IRQD_PERF_CRITICAL))
+		return false;
+	
 	/*
 	 * No move required, if:
 	 * - Interrupt is per cpu
