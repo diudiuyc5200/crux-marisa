@@ -6881,7 +6881,6 @@ int dsi_display_set_mode(struct dsi_display *display,
 {
 	int rc = 0;
 	struct dsi_display_mode adj_mode;
-	struct dsi_mode_info timing;
 
 	if (!display || !mode || !display->panel) {
 		pr_err("Invalid params\n");
@@ -6891,7 +6890,6 @@ int dsi_display_set_mode(struct dsi_display *display,
 	mutex_lock(&display->display_lock);
 
 	adj_mode = *mode;
-	timing = adj_mode.timing;
 	adjust_timing_by_ctrl_count(display, &adj_mode);
 
 	/*For dynamic DSI setting, use specified clock rate */
@@ -6918,11 +6916,6 @@ int dsi_display_set_mode(struct dsi_display *display,
 			goto error;
 		}
 	}
-
-	pr_info("mdp_transfer_time_us=%d us\n",
-			adj_mode.priv_info->mdp_transfer_time_us);
-	pr_info("hactive= %d, vactive= %d, fps=%d", timing.h_active,
-			timing.v_active, timing.refresh_rate);
 
 	memcpy(display->panel->cur_mode, &adj_mode, sizeof(adj_mode));
 error:
