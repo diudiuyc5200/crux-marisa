@@ -7781,6 +7781,8 @@ int dsi_display_enable(struct dsi_display *display)
 
 	mode = display->panel->cur_mode;
 
+	WRITE_ONCE(cur_refresh_rate, mode->timing.refresh_rate);
+	
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
 		rc = dsi_panel_post_switch(display->panel);
 		if (rc) {
