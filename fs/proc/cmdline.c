@@ -30,7 +30,6 @@ static void proc_command_line_init(void) {
 static int cmdline_proc_show(struct seq_file *m, void *v)
 {
 	seq_printf(m, "%s\n", saved_command_line);
-#endif
 	return 0;
 }
 
