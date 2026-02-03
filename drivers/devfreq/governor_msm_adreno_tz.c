@@ -21,6 +21,7 @@
 #include <linux/mm.h>
 #include <linux/msm_adreno_devfreq.h>
 #include <asm/cacheflush.h>
+#include <drm/drm_refresh_rate.h>
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
