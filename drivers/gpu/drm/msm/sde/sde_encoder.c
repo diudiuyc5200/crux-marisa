@@ -229,6 +229,7 @@ enum sde_enc_rc_states {
  * @cur_conn_roi:		current connector roi
  * @prv_conn_roi:		previous connector roi to optimize if unchanged
  * @crtc			pointer to drm_crtc
+ * @first_kickoff_done:		boolean for whether the first kickoff is done
  * @recovery_events_enabled:	status of hw recovery feature enable by client
  * @elevated_ahb_vote:		increase AHB bus speed for the first frame
  *				after power collapse
@@ -293,6 +294,7 @@ struct sde_encoder_virt {
 	struct sde_rect cur_conn_roi;
 	struct sde_rect prv_conn_roi;
 	struct drm_crtc *crtc;
+	bool first_kickoff_done;
 
 	bool recovery_events_enabled;
 	bool elevated_ahb_vote;
@@ -2390,8 +2392,6 @@ static int sde_encoder_resource_control(struct drm_encoder *drm_enc,
 			SDE_DEBUG_ENC(sde_enc, "sw_event:%d, work cancelled\n",
 					sw_event);
 
-		msm_idle_set_state(drm_enc, true);
-
 		mutex_lock(&sde_enc->rc_lock);
 
 		/* return if the resource control is already in ON state */
@@ -2494,8 +2494,6 @@ static int sde_encoder_resource_control(struct drm_encoder *drm_enc,
 			idle_pc_duration = IDLE_SHORT_TIMEOUT;
 		else
 			idle_pc_duration = IDLE_POWERCOLLAPSE_DURATION;
-
-		msm_idle_set_state(drm_enc, false);
 
 		if (!autorefresh_enabled)
 			kthread_mod_delayed_work(
@@ -4800,6 +4798,7 @@ static int _sde_encoder_reset_ctl_hw(struct drm_encoder *drm_enc)
 
 void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool is_error)
 {
+	static bool first_run = true;
 	struct sde_encoder_virt *sde_enc;
 	struct sde_encoder_phys *phys;
 	struct dsi_bridge *bridge = NULL;
@@ -4807,7 +4806,6 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool is_error)
 	struct dsi_display_mode adj_mode;
 	ktime_t wakeup_time;
 	unsigned int i;
-	static bool first_run = true;
 
 	if (!drm_enc) {
 		SDE_ERROR("invalid encoder\n");
@@ -4855,13 +4853,9 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool is_error)
 				nsecs_to_jiffies(ktime_to_ns(wakeup_time)));
 	}
 
-	/*
-	 * Trigger a panel reset if this is the first kickoff and the refresh
-	 * rate is not 60 Hz
-	 */
-	if (cmpxchg(&first_run, true, false) &&
-	    sde_enc->crtc->mode.vrefresh != 60) {
-		struct sde_connector *conn = container_of(phys->connector, struct sde_connector, base);
+	/* Reset panel if this is the first kickoff */
+	if (!cmpxchg(&sde_enc->first_kickoff_done, false, true)) {
+		struct sde_connector *conn = to_sde_connector(phys->connector);
 		struct drm_event event = {
 			.type = DRM_EVENT_PANEL_DEAD,
 			.length = sizeof(bool)
@@ -4872,19 +4866,6 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool is_error)
 		event.length = sizeof(bool);
 		msm_mode_object_event_notify(&conn->base.base,
 			conn->base.dev, &event, (u8 *) &conn->panel_dead);
-	}
-
-	if (dsi_display && dsi_display->panel
-		&& dsi_display->panel->host_config.phy_type == DSI_PHY_TYPE_CPHY
-		&& adj_mode.dsi_mode_flags & DSI_MODE_FLAG_VRR) {
-		dsi_panel_match_fps_pen_setting(dsi_display->panel, &adj_mode);
-		mutex_unlock(&dsi_display->panel->panel_lock);
-	}
-
-	if (drm_enc->bridge && drm_enc->bridge->is_dsi_drm_bridge) {
-		struct dsi_bridge *c_bridge = container_of((drm_enc->bridge), struct dsi_bridge, base);
-		if (c_bridge && c_bridge->display && c_bridge->display->panel)
-			c_bridge->display->panel->kickoff_count++;
 	}
 
 	SDE_ATRACE_END("encoder_kickoff");
@@ -6020,34 +6001,4 @@ void sde_encoder_recovery_events_handler(struct drm_encoder *encoder,
 
 	sde_enc = to_sde_encoder_virt(encoder);
 	sde_enc->recovery_events_enabled = enabled;
-}
-
-void sde_encoder_trigger_early_wakeup(struct drm_encoder *drm_enc)
-{
-	struct sde_encoder_virt *sde_enc = NULL;
-	struct msm_drm_private *priv = NULL;
-
-	priv = drm_enc->dev->dev_private;
-	sde_enc = to_sde_encoder_virt(drm_enc);
-	if (!sde_enc->crtc || (sde_enc->crtc->index
-			>= ARRAY_SIZE(priv->disp_thread))) {
-		SDE_DEBUG_ENC(sde_enc,
-			"invalid cached CRTC: %d or crtc index: %d\n",
-			sde_enc->crtc == NULL,
-			sde_enc->crtc ? sde_enc->crtc->index : -EINVAL);
-		return;
-	}
-
-	if (sde_encoder_get_intf_mode(drm_enc) != INTF_MODE_CMD) {
-		return;
-	}
-
-	SDE_ATRACE_BEGIN("sde_encoder_resource_control");
-	if (sde_enc->rc_state == SDE_ENC_RC_STATE_IDLE) {
-		sde_encoder_resource_control(drm_enc,
-					     SDE_ENC_RC_EVENT_EARLY_WAKEUP);
-
-	}
-	SDE_ATRACE_END("sde_encoder_resource_control");
-
 }
