@@ -876,6 +876,7 @@ struct adreno_coresight_attr {
 	struct adreno_coresight_register *reg;
 };
 
+#if IS_ENABLED(CONFIG_CORESIGHT_ADRENO)
 ssize_t adreno_coresight_show_register(struct device *device,
 		struct device_attribute *attr, char *buf);
 
@@ -888,6 +889,12 @@ ssize_t adreno_coresight_store_register(struct device *dev,
 		adreno_coresight_show_register, \
 		adreno_coresight_store_register), \
 		(_reg), }
+#else
+#define ADRENO_CORESIGHT_ATTR(_attrname, _reg) \
+	struct adreno_coresight_attr coresight_attr_##_attrname  = { \
+		__ATTR_NULL, \
+		(_reg), }
+#endif /* CONFIG_CORESIGHT_ADRENO */
 
 /**
  * struct adreno_coresight - GPU specific coresight definition
